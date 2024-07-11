@@ -1856,23 +1856,32 @@ public class ActivityManagerService extends IActivityManager.Stub
 
     public void setSystemProcess() {
         try {
+            //添加自己到ServiceManager
             ServiceManager.addService(Context.ACTIVITY_SERVICE, this, /* allowIsolated= */ true,
                     DUMP_FLAG_PRIORITY_CRITICAL | DUMP_FLAG_PRIORITY_NORMAL | DUMP_FLAG_PROTO);
+            //添加进程管理服务 可以获取每个进程内存使用情况
             ServiceManager.addService(ProcessStats.SERVICE_NAME, mProcessStats);
+            //添加 MemBinder，是用来dump每个进程内存信息的服务
             ServiceManager.addService("meminfo", new MemBinder(this), /* allowIsolated= */ false,
                     DUMP_FLAG_PRIORITY_HIGH);
+            //添加GraphicsBinder 可以获取每个进程图形加速的服务
             ServiceManager.addService("gfxinfo", new GraphicsBinder(this));
+            //添加 DbBinder  获取每个进程数据库的服务
             ServiceManager.addService("dbinfo", new DbBinder(this));
             mAppProfiler.setCpuInfoService();
+            //权限服务
             ServiceManager.addService("permission", new PermissionController(this));
+            //进程相关信息
             ServiceManager.addService("processinfo", new ProcessInfoService(this));
+            //计算进程状态和oom_adj值所需的所有代码。
             ServiceManager.addService("cacheinfo", new CacheBinder(this));
-
+            //获取到当前的ApplicationInfo 也就是framework-res.apk
             ApplicationInfo info = mContext.getPackageManager().getApplicationInfo(
                     "android", STOCK_PM_FLAGS | MATCH_SYSTEM_ONLY);
             mSystemThread.installSystemApplicationInfo(info, getClass().getClassLoader());
 
             synchronized (this) {
+                //把system_server添加到AMS的process管理者中
                 ProcessRecord app = mProcessList.newProcessRecordLocked(info, info.processName,
                         false,
                         0,
@@ -1895,6 +1904,7 @@ public class ActivityManagerService extends IActivityManager.Stub
         }
 
         // Start watching app ops after we and the package manager are up and running.
+        //应用启动的监听
         mAppOpsService.startWatchingMode(AppOpsManager.OP_RUN_IN_BACKGROUND, null,
                 new IAppOpsCallback.Stub() {
                     @Override public void opChanged(int op, int uid, String packageName) {
@@ -2075,17 +2085,20 @@ public class ActivityManagerService extends IActivityManager.Stub
 
         public Lifecycle(Context context) {
             super(context);
+            //AMS-startup4 构造方法里创建出AMS
             mService = new ActivityManagerService(context, sAtm);
         }
 
         public static ActivityManagerService startService(
                 SystemServiceManager ssm, ActivityTaskManagerService atm) {
             sAtm = atm;
+            //AMS-startup3 通过SystemServiceManager反射创建出静态内部类Lifecycle并调用ActivityManagerService的onStart方法
             return ssm.startService(ActivityManagerService.Lifecycle.class).getService();
         }
 
         @Override
         public void onStart() {
+            //AMS-startup  14 调用ams的start方法
             mService.start();
         }
 
@@ -2351,14 +2364,16 @@ public class ActivityManagerService extends IActivityManager.Stub
     public ActivityManagerService(Context systemContext, ActivityTaskManagerService atm) {
         LockGuard.installLock(this, LockGuard.INDEX_ACTIVITY);
         mInjector = new Injector(systemContext);
+        //AMS-startup 5 设置context 这里的context 不是我们应用的context是framework-res.apk
         mContext = systemContext;
 
         mFactoryTest = FactoryTest.getMode();
+        //AMS-startup 6 获取system_server中的ActivityThread
         mSystemThread = ActivityThread.currentActivityThread();
         mUiContext = mSystemThread.getSystemUiContext();
 
         Slog.i(TAG, "Memory class: " + ActivityManager.staticGetMemoryClass());
-
+        //AMS-startup 7 创建处理消息的线程和Handler
         mHandlerThread = new ServiceThread(TAG,
                 THREAD_PRIORITY_FOREGROUND, false /*allowIo*/);
         mHandlerThread.start();
@@ -2376,6 +2391,7 @@ public class ActivityManagerService extends IActivityManager.Stub
                 Context.PLATFORM_COMPAT_SERVICE);
         mProcessList = mInjector.getProcessList(this);
         mProcessList.init(this, activeUids, mPlatformCompat);
+        //创建出AppProfiler 并在构造方法里创建ProcessCpuThread线程来检测CPU的统计
         mAppProfiler = new AppProfiler(this, BackgroundThread.getHandler().getLooper(),
                 new LowMemDetector(this));
         mPhantomProcessList = new PhantomProcessList(this);
@@ -2395,7 +2411,7 @@ public class ActivityManagerService extends IActivityManager.Stub
         offloadConstants.TIMEOUT = BROADCAST_BG_TIMEOUT;
         // by default, no "slow" policy in this queue
         offloadConstants.SLOW_TIME = Integer.MAX_VALUE;
-
+        //AMS-startup 8 创建管理广播的队列 前台和后台
         mEnableOffloadQueue = SystemProperties.getBoolean(
                 "persist.device_config.activity_manager_native_boot.offload_queue_enabled", true);
 
@@ -2411,16 +2427,18 @@ public class ActivityManagerService extends IActivityManager.Stub
         mBroadcastQueues[1] = mBgBroadcastQueue;
         mBroadcastQueues[2] = mBgOffloadBroadcastQueue;
         mBroadcastQueues[3] = mFgOffloadBroadcastQueue;
-
+        //AMS-startup 9 管理service的对象
         mServices = new ActiveServices(this);
+        //AMS-startup 10 管理ContentProvider的对象
         mCpHelper = new ContentProviderHelper(this, true);
         mPackageWatchdog = PackageWatchdog.getInstance(mUiContext);
         mAppErrors = new AppErrors(mUiContext, this, mPackageWatchdog);
         mUidObserverController = new UidObserverController(mUiHandler);
-
+        //获取系统目录
         final File systemDir = SystemServiceManager.ensureSystemDir();
 
         // TODO: Move creation of battery stats service outside of activity manager service.
+        //创建电池状态管理的service
         mBatteryStatsService = new BatteryStatsService(systemContext, systemDir,
                 BackgroundThread.get().getHandler());
         mBatteryStatsService.getActiveStatistics().readLocked();
@@ -2429,13 +2447,13 @@ public class ActivityManagerService extends IActivityManager.Stub
                 : mBatteryStatsService.getActiveStatistics().getIsOnBattery();
         mBatteryStatsService.getActiveStatistics().setCallback(this);
         mOomAdjProfiler.batteryPowerChanged(mOnBattery);
-
+        //AMS-startup 11 创建进程状态管理的服务
         mProcessStats = new ProcessStatsService(this, new File(systemDir, "procstats"));
 
         mAppOpsService = mInjector.getAppOpsService(new File(systemDir, "appops.xml"), mHandler);
 
         mUgmInternal = LocalServices.getService(UriGrantsManagerInternal.class);
-
+        //创建UserController
         mUserController = new UserController(this);
 
         mPendingIntentController = new PendingIntentController(
@@ -2447,15 +2465,16 @@ public class ActivityManagerService extends IActivityManager.Stub
 
         mTrackingAssociations = "1".equals(SystemProperties.get("debug.track-associations"));
         mIntentFirewall = new IntentFirewall(new IntentFirewallInterface(), mHandler);
-
+        //赋值ActivityTaskManagerService
         mActivityTaskManager = atm;
+        //AMS-startup 12 ActivityTaskManagerService进行初始化
         mActivityTaskManager.initialize(mIntentFirewall, mPendingIntentController,
                 DisplayThread.get().getLooper());
         mAtmInternal = LocalServices.getService(ActivityTaskManagerInternal.class);
 
         mHiddenApiBlacklist = new HiddenApiSettings(mHandler, mContext);
         mSdkSandboxSettings = new SdkSandboxSettings(mContext);
-
+        //AMS-startup 13 添加到看门狗 进行检测
         Watchdog.getInstance().addMonitor(this);
         Watchdog.getInstance().addThread(mHandler);
 
@@ -2488,8 +2507,11 @@ public class ActivityManagerService extends IActivityManager.Stub
     }
 
     private void start() {
+        //把电池状态管理添加到ServiceManager中
         mBatteryStatsService.publish();
+        //把AppOpsService添加到ServiceManager中
         mAppOpsService.publish();
+        //把ProcessStatsService添加到ServiceManager中
         mProcessStats.publish();
         Slog.d("AppOps", "AppOpsService published");
         LocalServices.addService(ActivityManagerInternal.class, mInternal);
@@ -2497,6 +2519,7 @@ public class ActivityManagerService extends IActivityManager.Stub
                 (ActivityManagerLocal) mInternal);
         mActivityTaskManager.onActivityManagerInternalAdded();
         mPendingIntentController.onActivityManagerInternalAdded();
+        //开启cpu线程
         mAppProfiler.onActivityManagerInternalAdded();
         CriticalEventLog.init();
     }
@@ -6699,7 +6722,9 @@ public class ActivityManagerService extends IActivityManager.Stub
             String abiOverride,
             int zygotePolicyFlags) {
         ProcessRecord app;
+        // isolated 为 true 表示要启动一个新的进程
         if (!isolated) {
+            // 在已经启动的进程列表中查找
             app = getProcessRecordLocked(customProcess != null ? customProcess : info.processName,
                     info.uid);
         } else {
@@ -6707,6 +6732,7 @@ public class ActivityManagerService extends IActivityManager.Stub
         }
 
         if (app == null) {
+            // 新建一个 ProcessRecord 对象
             app = mProcessList.newProcessRecordLocked(
                     info,
                     customProcess,
@@ -6729,6 +6755,9 @@ public class ActivityManagerService extends IActivityManager.Stub
         // TODO: how set package stopped state should work for sdk sandboxes?
         if (!isSdkSandbox) {
             try {
+                // 将包的stopped状态设置为false
+                // 如果为ture那么所有广播都无法接收，除非带有标记FLAG_INCLUDE_STOPPED_PACKAGES的广播
+                // 正经的广播都不会带有这个标记
                 AppGlobals.getPackageManager().setPackageStoppedState(
                         info.packageName, false, UserHandle.getUserId(app.uid));
             } catch (RemoteException e) {
@@ -6739,11 +6768,13 @@ public class ActivityManagerService extends IActivityManager.Stub
         }
 
         if ((info.flags & PERSISTENT_MASK) == PERSISTENT_MASK) {
+            //  设置persistent标记
             app.setPersistent(true);
             app.mState.setMaxAdj(ProcessList.PERSISTENT_PROC_ADJ);
         }
         if (app.getThread() == null && mPersistentStartingProcesses.indexOf(app) < 0) {
             mPersistentStartingProcesses.add(app);
+            //启动进程
             mProcessList.startProcessLocked(app, new HostingRecord(
                     HostingRecord.HOSTING_TYPE_ADDED_APPLICATION,
                     customProcess != null ? customProcess : app.processName),
@@ -8048,9 +8079,12 @@ public class ActivityManagerService extends IActivityManager.Stub
             t.traceBegin("controllersReady");
             mLocalDeviceIdleController =
                     LocalServices.getService(DeviceIdleInternal.class);
+            //调用ActivityTaskManagerService的systemReady 准备和task相关的服务
             mActivityTaskManager.onSystemReady();
             // Make sure we have the current profile info, since it is needed for security checks.
+            //装载用户Profile的信息
             mUserController.onSystemReady();
+            //启动App权限监听
             mAppOpsService.systemReady();
             mProcessList.onSystemReady();
             mAppRestrictionController.onSystemReady();
@@ -8065,10 +8099,12 @@ public class ActivityManagerService extends IActivityManager.Stub
         } catch (RemoteException e) {}
 
         t.traceBegin("killProcesses");
+        //查找需要kill的进程
         ArrayList<ProcessRecord> procsToKill = null;
         synchronized(mPidsSelfLocked) {
             for (int i=mPidsSelfLocked.size()-1; i>=0; i--) {
                 ProcessRecord proc = mPidsSelfLocked.valueAt(i);
+                //判断进程是否有FLAG_PERSISTENT标志
                 if (!isAllowedWhileBooting(proc.info)){
                     if (procsToKill == null) {
                         procsToKill = new ArrayList<ProcessRecord>();
@@ -8079,7 +8115,7 @@ public class ActivityManagerService extends IActivityManager.Stub
         }
 
         synchronized(this) {
-            if (procsToKill != null) {
+            if (procsToKill != null) {//清理
                 for (int i = procsToKill.size() - 1; i >= 0; i--) {
                     ProcessRecord proc = procsToKill.get(i);
                     Slog.i(TAG, "Removing system update proc: " + proc);
@@ -8093,6 +8129,7 @@ public class ActivityManagerService extends IActivityManager.Stub
             // Now that we have cleaned up any update processes, we
             // are ready to start launching real processes and know that
             // we won't trample on them any more.
+            //清理完成
             mProcessesReady = true;
         }
         t.traceEnd(); // KillProcesses
@@ -8169,6 +8206,7 @@ public class ActivityManagerService extends IActivityManager.Stub
             // Only start up encryption-aware persistent apps; once user is
             // unlocked we'll come back around and start unaware apps
             t.traceBegin("startPersistentApps");
+            //开启 开机就需要启动的app
             startPersistentApps(PackageManager.MATCH_DIRECT_BOOT_AWARE);
             t.traceEnd();
 
@@ -8195,6 +8233,7 @@ public class ActivityManagerService extends IActivityManager.Stub
 
             if (bootingSystemUser) {
                 t.traceBegin("startHomeOnAllDisplays");
+                //开启Launcher
                 mAtmInternal.startHomeOnAllDisplays(currentUserId, "systemReady");
                 t.traceEnd();
             }
@@ -8210,6 +8249,7 @@ public class ActivityManagerService extends IActivityManager.Stub
                 final int callingPid = Binder.getCallingPid();
                 final long ident = Binder.clearCallingIdentity();
                 try {
+                    //发送ACTION_USER_STARTED 广播
                     Intent intent = new Intent(Intent.ACTION_USER_STARTED);
                     intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY
                             | Intent.FLAG_RECEIVER_FOREGROUND);
@@ -8218,6 +8258,7 @@ public class ActivityManagerService extends IActivityManager.Stub
                             null, null, 0, null, null, null, null, null, OP_NONE,
                             null, false, false, MY_PID, SYSTEM_UID, callingUid, callingPid,
                             currentUserId);
+                    //发送ACTION_USER_STARTING广播
                     intent = new Intent(Intent.ACTION_USER_STARTING);
                     intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY);
                     intent.putExtra(Intent.EXTRA_USER_HANDLE, currentUserId);

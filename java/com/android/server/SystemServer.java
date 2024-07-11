@@ -1117,8 +1117,10 @@ public final class SystemServer implements Dumpable {
         // Activity manager runs the show.
         t.traceBegin("StartActivityManager");
         // TODO: Might need to move after migration to WM.
+        //AMS-startup1 通过SystemServiceManager反射创建创建ATMS
         ActivityTaskManagerService atm = mSystemServiceManager.startService(
                 ActivityTaskManagerService.Lifecycle.class).getService();
+        //AMS-startup2  调用ActivityManagerService的静态内部类创建AMS
         mActivityManagerService = ActivityManagerService.Lifecycle.startService(
                 mSystemServiceManager, atm);
         mActivityManagerService.setSystemServiceManager(mSystemServiceManager);
@@ -1282,6 +1284,7 @@ public final class SystemServer implements Dumpable {
 
         // Set up the Application instance for the system process and get started.
         t.traceBegin("SetSystemProcess");
+        //AMS-startup  15 设置系统进程
         mActivityManagerService.setSystemProcess();
         t.traceEnd();
 
@@ -2790,6 +2793,8 @@ public final class SystemServer implements Dumpable {
         // where third party code can really run (but before it has actually
         // started launching the initial applications), for us to complete our
         // initialization.
+        //AMS-startup  16 告诉活动管理器可以运行第三方代码。一旦它达到第三方代码可以真正运行的状态（
+        // 但在它实际开始启动初始应用程序之前），它就会回电给我们，以便我们完成初始化。
         mActivityManagerService.systemReady(() -> {
             Slog.i(TAG, "Making services ready");
             t.traceBegin("StartActivityManagerReadyPhase");
