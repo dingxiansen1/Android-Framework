@@ -4889,6 +4889,7 @@ class Task extends TaskFragment {
 
             if (isLeafTask()) {
                 if (isFocusableAndVisible()) {
+                    //AMS - activity start-9
                     someActivityResumed = resumeTopActivityInnerLocked(prev, options, deferPause);
                 }
             } else {
@@ -4962,6 +4963,7 @@ class Task extends TaskFragment {
             if (!f.canBeResumed(null /* starting */)) {
                 return;
             }
+            //AMS - activity start-10
             resumed[0] |= f.resumeTopActivity(prev, options, deferPause);
         }, true);
         return resumed[0];

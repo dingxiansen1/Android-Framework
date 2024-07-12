@@ -1497,6 +1497,7 @@ class TaskFragment extends WindowContainer<WindowContainer> {
                 if (DEBUG_SWITCH) Slog.v(TAG_SWITCH, "Restarting: " + next);
             }
             ProtoLog.d(WM_DEBUG_STATES, "resumeTopActivity: Restarting %s", next);
+            //AMS - activity start-11
             mTaskSupervisor.startSpecificActivity(next, true, true);
         }
 

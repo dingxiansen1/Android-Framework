@@ -2248,6 +2248,7 @@ class RootWindowContainer extends WindowContainer<DisplayContent>
     boolean resumeFocusedTasksTopActivities(
             Task targetRootTask, ActivityRecord target, ActivityOptions targetOptions,
             boolean deferPause) {
+        // mTaskSupervisor 判断是否恢复状态
         if (!mTaskSupervisor.readyToResume()) {
             return false;
         }
@@ -2255,6 +2256,8 @@ class RootWindowContainer extends WindowContainer<DisplayContent>
         boolean result = false;
         if (targetRootTask != null && (targetRootTask.isTopRootTaskInDisplayArea()
                 || getTopDisplayFocusedRootTask() == targetRootTask)) {
+            // 恢复栈顶的 Activity
+            //AMS - activity start-8
             result = targetRootTask.resumeTopActivityUncheckedLocked(target, targetOptions,
                     deferPause);
         }
@@ -2294,6 +2297,7 @@ class RootWindowContainer extends WindowContainer<DisplayContent>
                 // activity is started and resumed, and no recursion occurs.
                 final Task focusedRoot = display.getFocusedRootTask();
                 if (focusedRoot != null) {
+                    // 恢复栈顶的 Activity
                     result |= focusedRoot.resumeTopActivityUncheckedLocked(target, targetOptions);
                 } else if (targetRootTask == null) {
                     result |= resumeHomeActivity(null /* prev */, "no-focusable-task",

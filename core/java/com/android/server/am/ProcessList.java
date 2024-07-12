@@ -1658,6 +1658,7 @@ public final class ProcessList {
         if (DEBUG_PROCESSES && mService.mProcessesOnHold.contains(app)) Slog.v(
                 TAG_PROCESSES,
                 "startProcessLocked removing on hold: " + app);
+        // 从等待启动的队列中移除
         mService.mProcessesOnHold.remove(app);
 
         checkSlow(startUptime, "startProcess: starting to update cpu stats");
@@ -1667,6 +1668,7 @@ public final class ProcessList {
         try {
             final int userId = UserHandle.getUserId(app.uid);
             try {
+                // 检查当前包是否可启动
                 AppGlobals.getPackageManager().checkPackageStartable(app.info.packageName, userId);
             } catch (RemoteException e) {
                 throw e.rethrowAsRuntimeException();
@@ -1882,7 +1884,7 @@ public final class ProcessList {
             // Start the process.  It will either succeed and return a result containing
             // the PID of the new process, or else throw a RuntimeException.
             final String entryPoint = "android.app.ActivityThread";
-
+            //AMS - activity start-18 启动进程
             return startProcessLocked(hostingRecord, entryPoint, app, uid, gids,
                     runtimeFlags, zygotePolicyFlags, mountExternal, seInfo, requiredAbi,
                     instructionSet, invokeWith, startUptime, startElapsedTime);
@@ -1931,10 +1933,11 @@ public final class ProcessList {
         app.setUsingWrapper(invokeWith != null
                 || Zygote.getWrapProperty(app.processName) != null);
         mPendingStarts.put(startSeq, app);
-
+        // AMS设置了异步启动进程
         if (mService.mConstants.FLAG_PROCESS_START_ASYNC) {
             if (DEBUG_PROCESSES) Slog.i(TAG_PROCESSES,
                     "Posting procStart msg for " + app.toShortString());
+            //AMS - activity start-19
             mService.mProcStartHandler.post(() -> handleProcessStart(
                     app, entryPoint, gids, runtimeFlags, zygotePolicyFlags, mountExternal,
                     requiredAbi, instructionSet, invokeWith, startSeq));
@@ -1969,6 +1972,7 @@ public final class ProcessList {
             final String invokeWith, final long startSeq) {
         final Runnable startRunnable = () -> {
             try {
+                //AMS - activity start-20
                 final Process.ProcessStartResult startResult = startProcess(app.getHostingRecord(),
                         entryPoint, app, app.getStartUid(), gids, runtimeFlags, zygotePolicyFlags,
                         mountExternal, app.getSeInfo(), requiredAbi, instructionSet, invokeWith,
@@ -2285,6 +2289,8 @@ public final class ProcessList {
 
             final Process.ProcessStartResult startResult;
             boolean regularZygote = false;
+            // 是否从webviewZygote创建进程
+            // 这种情况下会通过WebViewZygote来启动进程
             if (hostingRecord.usesWebviewZygote()) {
                 startResult = startWebView(entryPoint,
                         app.processName, uid, uid, gids, runtimeFlags, mountExternal,
@@ -2293,6 +2299,7 @@ public final class ProcessList {
                         app.getDisabledCompatChanges(),
                         new String[]{PROC_START_SEQ_IDENT + app.getStartSeq()});
             } else if (hostingRecord.usesAppZygote()) {
+                // 是否从AppZygote来创建进程
                 final AppZygote appZygote = createAppZygoteForProcessIfNeeded(app);
 
                 // We can't isolate app data and storage data as parent zygote already did that.
@@ -2305,6 +2312,19 @@ public final class ProcessList {
                         false, false,
                         new String[]{PROC_START_SEQ_IDENT + app.getStartSeq()});
             } else {
+                // 从默认的Zygote中创建进程
+                // 本次流程进入这里
+                // 一般情况下，我们不指定Zygote进程时，HostingRecord中使用默认Zygote。
+                //AMS - activity start-21
+                //1.调用Process.start
+                //2.然后在调用ZygoteProcess.start
+                //3.在调用ZygoteProcess.startViaZygote方法,给argsForZygote列表设置参数
+                //4.调用ZygoteProcess.zygoteSendArgsAndGetResult方法
+                //5调用ZygoteProcess.attemptUsapSendArgsAndGetResult方法
+                //6 通过zygoteState.getUsapSessionSocket()创建LocalSocket
+                //7.通过获取创建LocalSocket的getOutputStream创建BufferedWriter将参数写入Zygote
+                //8.获取Zygote返回的结果   result.pid = usapReader.readInt();
+                //9.返回startResult完毕
                 regularZygote = true;
                 startResult = Process.start(entryPoint,
                         app.processName, uid, uid, gids, runtimeFlags, mountExternal,
@@ -2360,7 +2380,7 @@ public final class ProcessList {
                 false /* disableHiddenApiChecks */, false /* disableTestApiChecks */,
                 abiOverride);
     }
-
+    //AMS - activity start-16
     @GuardedBy("mService")
     ProcessRecord startProcessLocked(String processName, ApplicationInfo info,
             boolean knownToBeDead, int intentFlags, HostingRecord hostingRecord,
@@ -2369,13 +2389,19 @@ public final class ProcessList {
             String abiOverride, String entryPoint, String[] entryPointArgs, Runnable crashHandler) {
         long startTime = SystemClock.uptimeMillis();
         ProcessRecord app;
+        // 如果进程是孤立进程
+        // 此次流程isolated为false
         if (!isolated) {
+            // 通过进程名和uid获取对应ProcessRecord对象
             app = getProcessRecordLocked(processName, info.uid);
             checkSlow(startTime, "startProcess: after getProcessRecord");
-
+            // 如果请求来自后台进程
             if ((intentFlags & Intent.FLAG_FROM_BACKGROUND) != 0) {
                 // If we are in the background, then check to see if this process
                 // is bad.  If so, we will just silently fail.
+                // 目标进程是否是一个“坏进程”
+                // 坏进程是指短时间内连续崩溃两次以上的进程
+                // 坏进程从后台启动进程将会直接失败
                 if (mService.mAppErrors.isBadProcess(processName, info.uid)) {
                     if (DEBUG_PROCESSES) Slog.v(TAG, "Bad process: " + info.uid
                             + "/" + processName);
@@ -2386,6 +2412,8 @@ public final class ProcessList {
                 // crash count so that we won't make it bad until they see at
                 // least one crash dialog again, and make the process good again
                 // if it had been bad.
+                // 如果请求不是来自后台进程，那么就来自用户了
+                // 这时候需要清除目标进程的崩溃计数，让它成为一个“好进程”
                 if (DEBUG_PROCESSES) Slog.v(TAG, "Clearing bad process: " + info.uid
                         + "/" + processName);
                 mService.mAppErrors.resetProcessCrashTime(processName, info.uid);
@@ -2401,6 +2429,7 @@ public final class ProcessList {
             }
         } else {
             // If this is an isolated process, it can't re-use an existing process.
+            // 对于孤立进程，无法再利用已存在的进程
             app = null;
         }
 
@@ -2410,6 +2439,10 @@ public final class ProcessList {
         //     object attached to it so we know it couldn't have crashed; and
         // (3) There is a pid assigned to it, so it is either starting or
         //     already running.
+        // 如果满足三种条件时，我们可以复用这个进程：
+        // 1、已经存在了对应的ProcessRecord对象，并且pid大于0
+        // 2、AMS认为它没有死亡，并且进程没有被杀掉
+        // 3、或者进程还没有绑定binder线程（IApplicationThread）
         if (DEBUG_PROCESSES) Slog.v(TAG_PROCESSES, "startProcess: name=" + processName
                 + " app=" + app + " knownToBeDead=" + knownToBeDead
                 + " thread=" + (app != null ? app.getThread() : null)
@@ -2430,6 +2463,7 @@ public final class ProcessList {
             // clean it up now.
             if (DEBUG_PROCESSES) Slog.v(TAG_PROCESSES, "App died: " + app);
             checkSlow(startTime, "startProcess: bad proc running, killing");
+
             ProcessList.killProcessGroup(app.uid, app.getPid());
             checkSlow(startTime, "startProcess: done killing old proc");
 
@@ -2456,7 +2490,8 @@ public final class ProcessList {
                         + predecessor.getDyingPid());
             }
         }
-
+        // 如果app为null，说明目标App进程一定不在运行
+        // 新建进程之前先创建好ProgressRecord对象
         if (app == null) {
             checkSlow(startTime, "startProcess: creating new process record");
             app = newProcessRecordLocked(info, processName, isolated, isolatedUid, isSdkSandbox,
@@ -2475,6 +2510,8 @@ public final class ProcessList {
             }
             checkSlow(startTime, "startProcess: done creating new process record");
         } else {
+            // 这里对应ProgressRecord绑定在之前的进程的情况
+            // 清理之后重新绑定新的包信息
             // If this is a new package in the process, add the package to the list
             app.addPackage(info.packageName, info.longVersionCode, mService.mProcessStats);
             checkSlow(startTime, "startProcess: added package to existing proc");
@@ -2482,6 +2519,9 @@ public final class ProcessList {
 
         // If the system is not ready yet, then hold off on starting this
         // process until it is.
+        // 到这里我们已经确保有了App进程的ProcessRecord对象了
+        // 如果系统还没准备好就先添加到等待队列中
+        // 当进程为persistent，则isAllowedWhileBooting为true，这次流程为false
         if (!mService.mProcessesReady
                 && !mService.isAllowedWhileBooting(info)
                 && !allowWhileBooting) {
@@ -2495,6 +2535,7 @@ public final class ProcessList {
         }
 
         checkSlow(startTime, "startProcess: stepping in to startProcess");
+        //AMS - activity start-17
         final boolean success =
                 startProcessLocked(app, hostingRecord, zygotePolicyFlags, abiOverride);
         checkSlow(startTime, "startProcess: done starting proc!");

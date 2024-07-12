@@ -2853,6 +2853,8 @@ public class ActivityManagerService extends IActivityManager.Stub
             ApplicationInfo info, boolean knownToBeDead, int intentFlags,
             HostingRecord hostingRecord, int zygotePolicyFlags, boolean allowWhileBooting,
             boolean isolated) {
+        //AMS - activity start-15
+        //ProcessList是ActivityManager中用于管理进程的类，
         return mProcessList.startProcessLocked(processName, info, knownToBeDead, intentFlags,
                 hostingRecord, zygotePolicyFlags, allowWhileBooting, isolated, 0 /* isolatedUid */,
                 false /* isSdkSandbox */, 0 /* sdkSandboxClientAppUid */,
@@ -17255,6 +17257,11 @@ public class ActivityManagerService extends IActivityManager.Stub
                     // If the process is known as top app, set a hint so when the process is
                     // started, the top priority can be applied immediately to avoid cpu being
                     // preempted by other processes before attaching the process of top app.
+                    //AMS - activity start-14
+                    //方法中主要是对后续操作加锁，并将hostingType和hostingName封装到HostingRecord对象中。
+                    //HostingRecord类用于描述进程的启动信息，这里的hostingType可以是activity、service、broadcast、content provider，
+                    // 这里为“activity”，hostingName是对应的组件名ComponentName。
+                    //接着调用了ActivityManagerService中的startProcessLocked方法。
                     startProcessLocked(processName, info, knownToBeDead, 0 /* intentFlags */,
                             new HostingRecord(hostingType, hostingName, isTop),
                             ZYGOTE_POLICY_FLAG_LATENCY_SENSITIVE, false /* allowWhileBooting */,

@@ -1277,6 +1277,9 @@ public class ActivityTaskManagerService extends IActivityTaskManager.Stub {
                 Binder.getCallingPid(), Binder.getCallingUid(), "startActivityAsUser");
 
         // TODO: Switch to user app stacks here.
+        //AMS - activity start-1
+        //获取 一个 ActivityStartController，然后通过它获取一个 ActivityStarter
+        //然后执行 execute
         return getActivityStartController().obtainStarter(intent, "startActivityAsUser")
                 .setCaller(caller)
                 .setCallingPackage(callingPackage)
@@ -4873,6 +4876,9 @@ public class ActivityTaskManagerService extends IActivityTaskManager.Stub {
             }
             // Post message to start process to avoid possible deadlock of calling into AMS with the
             // ATMS lock held.
+            //AMS - activity start-13
+            //ActivityManagerInternal 是一个抽象类,他的具体实现类是
+            // ActivityManagerService的内部类LocalService实现的
             final Message m = PooledLambda.obtainMessage(ActivityManagerInternal::startProcess,
                     mAmInternal, activity.processName, activity.info.applicationInfo, knownToBeDead,
                     isTop, hostingType, activity.intent.getComponent());

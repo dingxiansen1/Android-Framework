@@ -710,6 +710,9 @@ class ActivityStarter {
                 if (res != START_SUCCESS) {
                     return res;
                 }
+
+                //AMS - activity start-3
+                //执行启动请求
                 res = executeRequest(mRequest);
 
                 Binder.restoreCallingIdentity(origId);
@@ -1184,6 +1187,8 @@ class ActivityStarter {
                 callerApp = wpc;
             }
         }
+        //AMS - activity start-4
+        //构建一个ActivityRecord对象,存储了Activity的所有信息
         final ActivityRecord r = new ActivityRecord.Builder(mService)
                 .setCaller(callerApp)
                 .setLaunchedFromPid(callingPid)
@@ -1223,7 +1228,8 @@ class ActivityStarter {
         if (!restrictedBgActivity && !isHomeProcess) {
             mService.resumeAppSwitches();
         }
-
+        //AMS - activity start-5
+        //startActivityUnchecked 主要就是调用了 startActivityInner，它才是真正执行启动 Activity 的逻辑。
         mLastStartActivityResult = startActivityUnchecked(r, sourceRecord, voiceSession,
                 request.voiceInteractor, startFlags, true /* doResume */, checkedOptions,
                 inTask, inTaskFragment, restrictedBgActivity, intentGrants);
@@ -1671,6 +1677,8 @@ class ActivityStarter {
             mService.deferWindowLayout();
             try {
                 Trace.traceBegin(Trace.TRACE_TAG_WINDOW_MANAGER, "startActivityInner");
+                //AMS - activity start-6
+                //开始启动Activity
                 result = startActivityInner(r, sourceRecord, voiceSession, voiceInteractor,
                         startFlags, doResume, options, inTask, inTaskFragment, restrictedBgActivity,
                         intentGrants);
@@ -1821,13 +1829,17 @@ class ActivityStarter {
             int startFlags, boolean doResume, ActivityOptions options, Task inTask,
             TaskFragment inTaskFragment, boolean restrictedBgActivity,
             NeededUriGrants intentGrants) {
+        // 设置初始状态
         setInitialState(r, options, inTask, inTaskFragment, doResume, startFlags, sourceRecord,
                 voiceSession, voiceInteractor, restrictedBgActivity);
-
+        // 首先就是计算 Activity 的启动模式
+        // 获得一个的 Flag，这玩意就是我们设置给 Intent 的。
         computeLaunchingTaskFlags();
-
+        // 处理源 Activity 的任务栈
+        // 如果源 Activity 正在 finish 则需要开启一个新的栈
         computeSourceRootTask();
-
+        // mLaunchFlags 就是前面计算的，这里设置给 mIntent
+        // 其实和我们启动 Activity 时自定义 Flag 很像
         mIntent.setFlags(mLaunchFlags);
 
         boolean dreamStopping = false;
@@ -1843,9 +1855,11 @@ class ActivityStarter {
         // Get top task at beginning because the order may be changed when reusing existing task.
         final Task prevTopRootTask = mPreferredTaskDisplayArea.getFocusedRootTask();
         final Task prevTopTask = prevTopRootTask != null ? prevTopRootTask.getTopLeafTask() : null;
+        // Reusable 复用，这里是获取可以复用的 Task
         final Task reusedTask = getReusableTask();
 
         // If requested, freeze the task list
+        //是否需要冻结 Task 列表
         if (mOptions != null && mOptions.freezeRecentTasksReordering()
                 && mSupervisor.mRecentTasks.isCallerRecents(r.launchedFromUid)
                 && !mSupervisor.mRecentTasks.isFreezeTaskListReorderingSet()) {
@@ -1854,10 +1868,13 @@ class ActivityStarter {
         }
 
         // Compute if there is an existing task that should be used for.
+        // 是否存在一个可以现在使用的 Task
+        // 是否有复用，如果没有，是否可以计算获取一个
         final Task targetTask = reusedTask != null ? reusedTask : computeTargetTask();
+        // 如果没有可以现在使用的 Task，那么就创建一个新 Task
         final boolean newTask = targetTask == null;
         mTargetTask = targetTask;
-
+        // 计算启动参数
         computeLaunchParams(r, sourceRecord, targetTask);
 
         // Check if starting activity on given task or on a new task is allowed.
@@ -1874,10 +1891,12 @@ class ActivityStarter {
             mPriorAboveTask = TaskDisplayArea.getRootTaskAbove(targetTask.getRootTask());
         }
 
+        // 获取栈顶没有 finish 的 activity
         final ActivityRecord targetTaskTop = newTask
                 ? null : targetTask.getTopNonFinishingActivity();
         if (targetTaskTop != null) {
             // Recycle the target task for this launch.
+            // 看一下栈顶的 Task targetTaskTop 是否可以回收复用
             startResult = recycleTask(targetTask, targetTaskTop, reusedTask, intentGrants);
             if (startResult != START_SUCCESS) {
                 return startResult;
@@ -1888,6 +1907,7 @@ class ActivityStarter {
 
         // If the activity being launched is the same as the one currently at the top, then
         // we need to check if it should only be launched once.
+        // 如果要启动的 Activity 与当前在顶部的 Activity 相同，那么我们需要检查它是否应该只被启动一次。
         final Task topRootTask = mPreferredTaskDisplayArea.getFocusedRootTask();
         if (topRootTask != null) {
             startResult = deliverToCurrentTopIfNeeded(topRootTask, intentGrants);
@@ -1897,14 +1917,20 @@ class ActivityStarter {
         }
 
         if (mTargetRootTask == null) {
+            // 获得一个栈 Task
             mTargetRootTask = getOrCreateRootTask(mStartActivity, mLaunchFlags, targetTask,
                     mOptions);
         }
         if (newTask) {
+            // 如果是新建 Task
             final Task taskToAffiliate = (mLaunchTaskBehind && mSourceRecord != null)
                     ? mSourceRecord.getTask() : null;
+            // 关联 Task 与 ActivityRecord
+            // 这个函数也会调用 addOrReparentStartingActivity
             setNewTask(taskToAffiliate);
         } else if (mAddingToTask) {
+            // 将要启动的 Activity 添加到 targetTask
+            // 并且会将此 Activity 添加到最近启动的 ActivityRecord 中，后续可以通过 findActivity 复用
             addOrReparentStartingActivity(targetTask, "adding to task");
         }
 
@@ -1948,6 +1974,7 @@ class ActivityStarter {
                 mOptions, sourceRecord);
         if (mDoResume) {
             final ActivityRecord topTaskActivity = startedTask.topRunningActivityLocked();
+            // 要启动的 Activity 无法获取焦点
             if (!mTargetRootTask.isTopActivityFocusable()
                     || (topTaskActivity != null && topTaskActivity.isTaskOverlay()
                     && mStartActivity != topTaskActivity)) {
@@ -1959,10 +1986,14 @@ class ActivityStarter {
                 // over is removed.
                 // Passing {@code null} as the start parameter ensures all activities are made
                 // visible.
+                // 如果 Activity 不可见就无法恢复
+                // 如有要确保可见，就会触发进入动画
+                // 并且，被覆盖的 Activity，直到覆盖物被移除前，都是不可见的
                 mTargetRootTask.ensureActivitiesVisible(null /* starting */,
                         0 /* configChanges */, !PRESERVE_WINDOWS);
                 // Go ahead and tell window manager to execute app transition for this activity
                 // since the app transition will not be triggered through the resume channel.
+                // 告诉 WMS 继续执行，因为现在 Activity 还无法恢复。
                 mTargetRootTask.mDisplayContent.executeAppTransition();
             } else {
                 // If the target root-task was not previously focusable (previous top running
@@ -1974,6 +2005,8 @@ class ActivityStarter {
                         && !mRootWindowContainer.isTopDisplayFocusedRootTask(mTargetRootTask)) {
                     mTargetRootTask.moveToFront("startActivityInner");
                 }
+                // 恢复栈顶的 Activity
+                //AMS - activity start-7
                 mRootWindowContainer.resumeFocusedTasksTopActivities(
                         mTargetRootTask, mStartActivity, mOptions, mTransientLaunch);
             }
@@ -1981,6 +2014,7 @@ class ActivityStarter {
         mRootWindowContainer.updateUserRootTask(mStartActivity.mUserId, mTargetRootTask);
 
         // Update the recent tasks list immediately when the activity starts
+        // Activity 启动时立即更新最近的任务列表
         mSupervisor.mRecentTasks.add(startedTask);
         mSupervisor.handleNonResizableTaskIfNeeded(startedTask,
                 mPreferredWindowingMode, mPreferredTaskDisplayArea, mTargetRootTask);

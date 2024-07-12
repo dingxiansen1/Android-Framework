@@ -127,6 +127,9 @@ public class ActivityStartController {
      *         considered invalid and no longer modified or used.
      */
     ActivityStarter obtainStarter(Intent intent, String reason) {
+        //AMS - activity start-2
+        //ActivityStartController是 ActivityStarter 的控制者，用于构建一个可以复用的 ActivityStarter。
+        //通过obtain()获取可以复用的ActivityStarter
         return mFactory.obtain().setIntent(intent).setReason(reason);
     }
 
